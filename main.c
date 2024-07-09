@@ -43,6 +43,7 @@ typedef struct Bullet
 	Vector2 startPos;
 	Vector2 velocity;
 	Rectangle collider;
+	bool active;
 } Bullet;
 
 typedef enum 
@@ -65,6 +66,7 @@ typedef struct State
 	Player *player;
 	Bullet *playerBullets;
 	Bullet *display_playerBullets;
+	int bulletCount;
 } State;
 
 //functions==================
@@ -73,6 +75,10 @@ void input(State *state);
 void init(GameMemory *game, State *state, Player *player);
 void update(State *state);
 void drawPlayer(State *state);
+void shootBullet(State *state);
+void updateBullets(State *state);
+void drawBullets(State *state);
+void clearBullets(State *state);
 //
 //===========================
 
@@ -143,6 +149,12 @@ void init(GameMemory *game, State *state, Player *player)
 		state->state = GAME;
 		state->playerBullets = (Bullet *)((uint8_t *)gameMemory.PermanantStorage + sizeof(Player) + sizeof(State));
 		state->display_playerBullets = (Bullet *)((uint8_t *)gameMemory.PermanantStorage + sizeof(Player) + sizeof(State) + (sizeof(Bullet) * PLAYER_BULLETS));
+		state->bulletCount = 0;
+
+		for (int i = 0; i < PLAYER_BULLETS; i++) {
+		    state->playerBullets[i].active = false;
+		    state->display_playerBullets[i].active = false;
+		}
 
 		game->IsInitialised = true;
 	}
@@ -153,9 +165,13 @@ void update(State *state)
 	while (!WindowShouldClose())
 	{
 		input(state);
+		updateBullets(state);
+		clearBullets(state);
+
 		BeginDrawing();
 			ClearBackground(RAYWHITE);
 			drawPlayer(state);
+			drawBullets(state);
 		EndDrawing();
 	}
 
@@ -198,8 +214,70 @@ void input(State *state)
 	{
 		state->player->position.y += state->player->speed * GetFrameTime();
 	}
+	if (IsKeyPressed(KEY_SPACE)) 
+	{
+		//initialise bullets
+		shootBullet(state);
+	}
 
 	// Update collider position
 	state->player->collider.x = state->player->position.x - (PLAYER_BASE_LEN/2.0);
 	state->player->collider.y = state->player->position.y - shipHeight;
+}
+
+void shootBullet(State *state)
+{
+	for(int i = 0; i < PLAYER_BULLETS; i++)	
+	{
+		if(!state->playerBullets[i].active)
+		{
+			state->playerBullets[i].position = (Vector2){ state->player->position.x, state->player->position.y - shipHeight };
+			state->playerBullets[i].velocity = (Vector2){ 0, -500 }; // Bullets move up
+			state->playerBullets[i].collider = (Rectangle){ state->playerBullets[i].position.x - 2.5f, state->playerBullets[i].position.y, 5, 10 };
+			state->playerBullets[i].active = true;
+			state->bulletCount++;
+			break;
+		}
+
+	}
+}
+
+void updateBullets(State *state)
+{
+    for (int i = 0; i < PLAYER_BULLETS; i++) {
+        if (state->playerBullets[i].active) {
+            state->playerBullets[i].position.y += state->playerBullets[i].velocity.y * GetFrameTime();
+
+            // Update collider position
+            state->playerBullets[i].collider.x = state->playerBullets[i].position.x - 2.5f;
+            state->playerBullets[i].collider.y = state->playerBullets[i].position.y;
+
+            // Check if bullet is out of screen
+            if (state->playerBullets[i].position.y < 0) {
+                state->playerBullets[i].active = false;
+                state->bulletCount--;
+            } else {
+                // Add to display_playerBullets
+                state->display_playerBullets[i] = state->playerBullets[i];
+            }
+        }
+    }
+}
+
+void clearBullets(State *state)
+{
+    for (int i = 0; i < PLAYER_BULLETS; i++) {
+        if (!state->playerBullets[i].active) {
+            state->display_playerBullets[i].active = false;
+        }
+    }
+}
+
+void drawBullets(State *state)
+{
+    for (int i = 0; i < PLAYER_BULLETS; i++) {
+        if (state->display_playerBullets[i].active) {
+            DrawRectangleRec(state->display_playerBullets[i].collider, RED);
+        }
+    }
 }
