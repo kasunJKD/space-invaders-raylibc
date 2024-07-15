@@ -2,6 +2,7 @@
 #include <math.h>
 #include <stdatomic.h>
 #include <stdbool.h>
+#include <stdint.h>
 #include <stdlib.h>
 #include <vcruntime.h>
 
@@ -46,6 +47,24 @@ typedef struct Bullet
 	bool active;
 } Bullet;
 
+typedef struct Enemy
+{
+	Vector2 position;
+	float scale;
+	bool active;
+	Rectangle collider;
+	int num_shape_points;
+	Vector2 shape_points[];
+} Enemy;
+
+typedef struct EnemeyWave
+{
+	int32_t enemy_number;
+	Vector2 wave_position;
+	Enemy *enemies;
+	int32_t enemyType;
+} EnemyWave;
+
 typedef enum 
 {
 	GAME,
@@ -55,10 +74,9 @@ typedef enum
 
 typedef enum
 {
-	FIRST = 10,
-	SECOND = 20,
-	THIRD = 50,
-} LevelEnemyNumber;
+	Alien,
+	Boss
+} EnemyType ;
 
 typedef struct State 
 {
@@ -67,6 +85,7 @@ typedef struct State
 	Bullet *playerBullets;
 	Bullet *display_playerBullets;
 	int bulletCount;
+	EnemyWave *enemyWave;
 } State;
 
 //functions==================
@@ -79,6 +98,8 @@ void shootBullet(State *state);
 void updateBullets(State *state);
 void drawBullets(State *state);
 void clearBullets(State *state);
+Enemy* initSingularEnemey(void *gamememory, int32_t type);
+void drawEnemies(State *state);
 //
 //===========================
 
@@ -156,6 +177,24 @@ void init(GameMemory *game, State *state, Player *player)
 		    state->display_playerBullets[i].active = false;
 		}
 
+		state->enemyWave = (EnemyWave *)game->TransientStorage;
+		state->enemyWave->enemyType = Alien;
+		if(state->enemyWave->enemyType == Alien)
+		{
+			state->enemyWave->enemy_number= 1;
+		}
+		state->enemyWave->wave_position = (Vector2){100.0f, 50.0f};
+		state->enemyWave->enemies = (Enemy *)((uint8_t *)gameMemory.TransientStorage + sizeof(EnemyWave));
+
+		for(int i = 0; i < state->enemyWave->enemy_number; i++)
+		{
+			Enemy *enemy = initSingularEnemey((uint8_t *)game->TransientStorage + sizeof(EnemyWave) + i * sizeof(Enemy), Alien);
+			enemy->position = (Vector2){state->enemyWave->wave_position.x + i * 50.0f, state->enemyWave->wave_position.y};
+			enemy->active = true;
+			state->enemyWave->enemies[i] = *enemy;
+
+		}
+
 		game->IsInitialised = true;
 	}
 }
@@ -172,6 +211,7 @@ void update(State *state)
 			ClearBackground(RAYWHITE);
 			drawPlayer(state);
 			drawBullets(state);
+			drawEnemies(state);
 		EndDrawing();
 	}
 
@@ -278,6 +318,93 @@ void drawBullets(State *state)
     for (int i = 0; i < PLAYER_BULLETS; i++) {
         if (state->display_playerBullets[i].active) {
             DrawRectangleRec(state->display_playerBullets[i].collider, RED);
+        }
+    }
+}
+
+Enemy* initSingularEnemey(void *gamememory, int32_t type)
+{
+	
+	Vector2 alien_shape_points[] = {
+			(Vector2){0.0f, 0.0f},
+			(Vector2){0.0f, -1.0f},
+			(Vector2){-0.5f, -0.5f},
+			(Vector2){-1.0f, 0.0f},
+			(Vector2){-0.5f, 0.25f},
+			(Vector2){0.0f, 0.25f},
+			(Vector2){-0.25f, 0.25f},
+			(Vector2){0.0f, 1.0f},
+			(Vector2){0.25f, 0.25f},
+			(Vector2){0.0f, 0.25f},
+			(Vector2){0.5f, 0.25f},
+			(Vector2){1.0f, 0.0f},
+			(Vector2){0.5f, -0.5f},
+			(Vector2){0.0f, -1.0f},
+		};
+
+	Vector2 boss_shape_points[] = {
+		(Vector2){0.0f, 0.0f},
+		(Vector2){1.0f, 0.0f},
+		(Vector2){1.0f, 1.0f},
+		(Vector2){0.0f, 1.0f},
+		(Vector2){-1.0f, 1.0f},
+		(Vector2){-1.0f, 0.0f},
+		(Vector2){0.0f, -1.0f},
+		(Vector2){1.0f, -1.0f},
+	    };
+
+	int num_points;
+	Vector2 *shape_points;
+
+	if (type == Alien)
+	{
+		num_points = sizeof(alien_shape_points) / sizeof(Vector2);
+		shape_points = alien_shape_points;
+	}
+	else if (type == Boss)
+	{
+		num_points = sizeof(boss_shape_points) / sizeof(Vector2);
+		shape_points = boss_shape_points;
+	}
+	else
+	{
+		return NULL; // Invalid enemy type
+	}
+
+	Enemy* enemy = (Enemy*)gamememory;
+	enemy->scale = (type == Alien) ? 22.0f : 50.0f;
+	enemy->active = false;
+	enemy->position = (Vector2){0.0f, 0.0f};
+	enemy->collider = (Rectangle){0, 0, 50, 50};
+	enemy->num_shape_points = num_points;
+
+	for (int i = 0; i < num_points; i++)
+	{
+		enemy->shape_points[i] = shape_points[i];
+	}
+
+	return enemy;
+}
+
+void drawEnemies(State *state)
+{
+    for (int i = 0; i < state->enemyWave->enemy_number; i++)
+    {
+        if (state->enemyWave->enemies[i].active)
+        {
+            Enemy *enemy = &state->enemyWave->enemies[i];
+            int num_points = enemy->num_shape_points;
+            Vector2 scaledShape[num_points];
+            for (int j = 0; j < num_points; j++)
+            {
+                scaledShape[j].x = (enemy->position.x) + (enemy->shape_points[j].x * enemy->scale);
+                scaledShape[j].y = (enemy->position.y) + (enemy->shape_points[j].y * enemy->scale);
+            }
+
+            // Collider debugger
+            DrawRectangleLinesEx(enemy->collider, 2.0f, RED);
+
+            DrawTriangleFan(scaledShape, num_points, GREEN);
         }
     }
 }
