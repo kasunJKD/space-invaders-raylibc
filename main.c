@@ -14,6 +14,7 @@
 #define PLAYER_OFFSET_BOTTOM 20.0
 #define PLAYER_SHAPE_POINTS 8
 #define PLAYER_BULLETS 50
+#define ENEMEY_NUMBER 5
 
 #define Kilobytes(Value) ((Value) * 1024LL)
 #define Megabytes(Value) (Kilobytes(Value) * 1024LL)
@@ -54,7 +55,7 @@ typedef struct Enemy
 	bool active;
 	Rectangle collider;
 	int num_shape_points;
-	Vector2 shape_points[];
+	Vector2 shape_points[14];
 } Enemy;
 
 typedef struct EnemeyWave
@@ -98,7 +99,7 @@ void shootBullet(State *state);
 void updateBullets(State *state);
 void drawBullets(State *state);
 void clearBullets(State *state);
-Enemy* initSingularEnemey(void *gamememory, int32_t type);
+Enemy* initSingularEnemey(void *gamememory, int32_t type, int index);
 void drawEnemies(State *state);
 //
 //===========================
@@ -181,14 +182,14 @@ void init(GameMemory *game, State *state, Player *player)
 		state->enemyWave->enemyType = Alien;
 		if(state->enemyWave->enemyType == Alien)
 		{
-			state->enemyWave->enemy_number= 1;
+			state->enemyWave->enemy_number= ENEMEY_NUMBER;
 		}
 		state->enemyWave->wave_position = (Vector2){100.0f, 50.0f};
 		state->enemyWave->enemies = (Enemy *)((uint8_t *)gameMemory.TransientStorage + sizeof(EnemyWave));
 
 		for(int i = 0; i < state->enemyWave->enemy_number; i++)
 		{
-			Enemy *enemy = initSingularEnemey((uint8_t *)game->TransientStorage + sizeof(EnemyWave) + i * sizeof(Enemy), Alien);
+			Enemy *enemy = initSingularEnemey((uint8_t *)game->TransientStorage + sizeof(EnemyWave) + i * sizeof(Enemy), Alien, i);
 			enemy->position = (Vector2){state->enemyWave->wave_position.x + i * 50.0f, state->enemyWave->wave_position.y};
 			enemy->active = true;
 			state->enemyWave->enemies[i] = *enemy;
@@ -322,7 +323,7 @@ void drawBullets(State *state)
     }
 }
 
-Enemy* initSingularEnemey(void *gamememory, int32_t type)
+Enemy* initSingularEnemey(void *gamememory, int32_t type, int index)
 {
 	
 	Vector2 alien_shape_points[] = {
@@ -370,8 +371,15 @@ Enemy* initSingularEnemey(void *gamememory, int32_t type)
 	{
 		return NULL; // Invalid enemy type
 	}
+	
+	 // Calculate the memory needed for the Enemy struct plus the shape points
+    size_t memory_needed = sizeof(Enemy) + num_points * sizeof(Vector2);
 
-	Enemy* enemy = (Enemy*)gamememory;
+    // Allocate the required memory
+    Enemy* enemy = (Enemy*)((uint8_t*)gamememory + index * memory_needed);
+
+	// Ensure each enemy has its own space in memory
+	//Enemy* enemy = (Enemy*)((uint8_t*)gamememory + index * sizeof(Enemy));
 	enemy->scale = (type == Alien) ? 22.0f : 50.0f;
 	enemy->active = false;
 	enemy->position = (Vector2){0.0f, 0.0f};
@@ -380,7 +388,7 @@ Enemy* initSingularEnemey(void *gamememory, int32_t type)
 
 	for (int i = 0; i < num_points; i++)
 	{
-		enemy->shape_points[i] = shape_points[i];
+		enemy->shape_points[i] = alien_shape_points[i];
 	}
 
 	return enemy;
@@ -402,7 +410,18 @@ void drawEnemies(State *state)
             }
 
             // Collider debugger
-            DrawRectangleLinesEx(enemy->collider, 2.0f, RED);
+            // Adjust the collider position to the enemy's world position
+            Rectangle adjustedCollider = {
+		enemy->position.x - (enemy->collider.width) / 2,
+                enemy->position.y - (enemy->collider.height) / 2,
+                enemy->collider.width,
+                enemy->collider.height
+            };
+
+	    enemy->collider = adjustedCollider;
+
+	    DrawRectangleLinesEx(adjustedCollider, 2.0f, RED);
+		
 
             DrawTriangleFan(scaledShape, num_points, GREEN);
         }
