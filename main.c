@@ -3,6 +3,7 @@
 #include <stdatomic.h>
 #include <stdbool.h>
 #include <stdint.h>
+#include <stdio.h>
 #include <stdlib.h>
 #include <vcruntime.h>
 
@@ -18,6 +19,9 @@
 
 #define Kilobytes(Value) ((Value) * 1024LL)
 #define Megabytes(Value) (Kilobytes(Value) * 1024LL)
+#ifndef M_PI
+#    define M_PI 3.14159265358979323846
+#endif
 
 typedef struct GameMemory 
 {
@@ -64,6 +68,8 @@ typedef struct EnemeyWave
 	Vector2 wave_position;
 	Enemy *enemies;
 	int32_t enemyType;
+	bool is_moving;
+	float move_timer;
 } EnemyWave;
 
 typedef enum 
@@ -101,6 +107,11 @@ void drawBullets(State *state);
 void clearBullets(State *state);
 Enemy* initSingularEnemey(void *gamememory, int32_t type, int index);
 void drawEnemies(State *state);
+void enemyWaveRandomMovement(EnemyWave *wave);
+
+float random_float(float min, float max);
+bool checkCollision(Rectangle a, Rectangle b);
+float easeInOut(float t);
 //
 //===========================
 
@@ -180,6 +191,7 @@ void init(GameMemory *game, State *state, Player *player)
 
 		state->enemyWave = (EnemyWave *)game->TransientStorage;
 		state->enemyWave->enemyType = Alien;
+		state->enemyWave->is_moving = false;
 		if(state->enemyWave->enemyType == Alien)
 		{
 			state->enemyWave->enemy_number= ENEMEY_NUMBER;
@@ -213,6 +225,7 @@ void update(State *state)
 			drawPlayer(state);
 			drawBullets(state);
 			drawEnemies(state);
+			enemyWaveRandomMovement(state->enemyWave);
 		EndDrawing();
 	}
 
@@ -426,4 +439,87 @@ void drawEnemies(State *state)
             DrawTriangleFan(scaledShape, num_points, GREEN);
         }
     }
+}
+
+float random_float(float min, float max)
+{
+	return ((float)rand() / RAND_MAX) * (max - min) + min;
+}
+
+bool checkCollision(Rectangle a, Rectangle b) 
+{
+    return (a.x < b.x + b.width &&
+            a.x + a.width > b.x &&
+            a.y < b.y + b.height &&
+            a.y + a.height > b.y);
+}
+
+
+float easeInOut(float t)
+{
+	return -(cos(M_PI * t) - 1) / 2;
+}
+
+void enemyWaveRandomMovement(EnemyWave *wave)
+{
+	static Vector2 start_position = {0.0f, 0.0f};
+	static Vector2 target_position = {0.0f, 0.0f};
+	static float elapsed_time = 0.0f;
+	static bool target_set = false;
+
+	if (!wave->is_moving) 
+	{
+		wave->move_timer += GetFrameTime(); // Update the timer
+
+		// Check if 5 seconds have passed
+		if (wave->move_timer >= 5.0f) 
+		{
+		    wave->is_moving = true;
+		    wave->move_timer = 0.0f; // Reset the timer
+		    start_position = wave->wave_position;
+
+			target_position.x = random_float(-100.0, 100.0);
+			elapsed_time = 0.0f;
+			target_set = true;
+		}
+	}
+
+	if (wave->is_moving && target_set)
+	{
+		 elapsed_time += GetFrameTime();
+        float t = elapsed_time / 1.0f; // Duration of 1 second for the ease-in-out movement
+        if (t >= 1.0f) 
+        {
+            t = 1.0f;
+            wave->is_moving = false; // Stop moving after reaching the target
+            target_set = false; // Reset the target flag
+        }
+	// Apply ease-in-out to the interpolation
+        float ease = easeInOut(t);
+        Vector2 new_wave_position = {
+            start_position.x + (target_position.x - start_position.x) * ease,
+            start_position.y + (target_position.y - start_position.y) * ease
+        };
+	printf("vector x: %f, y:%f\n", wave->wave_position.x, wave->wave_position.y);
+	//wave->wave_position.y = random_float(20.0, 50.0);
+	
+	 for (int i = 0; i < wave->enemy_number; i++) 
+        {
+            if (wave->enemies[i].active) 
+            {
+                float new_x = wave->enemies[i].position.x + (new_wave_position.x - wave->wave_position.x);
+                float new_x_col = wave->enemies[i].collider.x + (new_wave_position.x - wave->wave_position.x);
+
+                // Check if the new X position is within screen bounds
+                if (new_x >= 0 && new_x_col + wave->enemies[i].collider.width <= SCREENWIGTH) 
+                {
+                    wave->enemies[i].position.x = new_x;
+                    wave->enemies[i].collider.x = new_x_col;
+                }
+            }
+        }
+
+        wave->wave_position = new_wave_position;
+	
+	}
 }
